@@ -79,7 +79,7 @@ class SMARSIStrategy(IStrategy):
 
     # Optimal stoploss designed for the strategy.
     # This attribute will be overridden if the config file contains "stoploss".
-    stoploss = -0.02
+    stoploss = -0.03
 
     # Trailing stoploss
     trailing_stop = False
@@ -145,6 +145,28 @@ class SMARSIStrategy(IStrategy):
         if trades:
             return trades[0]
         return None
+
+    # 修改止损逻辑
+    def custom_stoploss(
+        self,
+        pair: str,
+        trade: Trade,
+        current_time: datetime,
+        current_rate: float,
+        current_profit: float,
+        after_fill: bool,  # 添加缺失参数
+        **kwargs,
+    ) -> float | None:  # 修正返回类型
+        # 获取当前K线数据
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        if dataframe.empty:
+            return -0.03  # 默认止损
+
+        # 找到当前时间对应的行
+        current_candle = dataframe.iloc[-1]
+        atr_value = current_candle["atr"]
+        current_close = current_candle["close"]
+        return -0.75 * atr_value / current_close  # 计算动态止损
 
     def informative_pairs(self):
         """
@@ -406,6 +428,13 @@ class SMARSIStrategy(IStrategy):
                 dataframe["best_ask"] = ob["asks"][0][0]
         """
 
+        # 添加量能指标
+        dataframe["volume_ma20"] = dataframe["volume"].rolling(20).mean()
+        dataframe["volume_pct"] = dataframe["volume"] / dataframe["volume_ma20"]
+
+        # 在populate_indicators中添加ATR
+        dataframe["atr"] = ta.ATR(dataframe, timeperiod=14)
+
         # --- 如何使用 has_open_trade ---
         pair = metadata["pair"]
 
@@ -427,93 +456,65 @@ class SMARSIStrategy(IStrategy):
         :param metadata: Additional information, like the currently traded pair
         :return: DataFrame with entry columns populated
         """
-        # dataframe.loc[
-        #     (
-        #         (qtpylib.crossed_above(dataframe["rsi"], self.buy_rsi.value))
-        #         &  # Signal: RSI crosses above buy_rsi
-        #         (dataframe["tema"] <= dataframe["bb_middleband"])
-        #         &  # Guard: tema below BB middle
-        #         (dataframe["tema"] > dataframe["tema"].shift(1))
-        #         &  # Guard: tema is raising
-        #         (dataframe["volume"] > 0)  # Make sure Volume is not 0
-        #     ),
-        #     "enter_long"] = 1
-        # Uncomment to use shorts (Only used in futures/margin mode.
-        # Check the documentation for more info)
-        # """
-        # dataframe.loc[
-        #     (
-        #         (qtpylib.crossed_above(dataframe["rsi"], self.sell_rsi.value))
-        #         &  # Signal: RSI crosses above sell_rsi
-        #         (dataframe["tema"] > dataframe["bb_middleband"])
-        #         &  # Guard: tema above BB middle
-        #         (dataframe["tema"] < dataframe["tema"].shift(1))
-        #         &  # Guard: tema is falling
-        #         (dataframe['volume'] > 0)  # Make sure Volume is not 0
-        #     ),
-        #     'enter_short'] = 1
-        # """
+        """
+        开仓入场信号逻辑说明:
+        本策略采用双模式开仓机制,根据ADX指标判断市场状态,分别触发趋势策略和反转策略:
 
-        # --- 开仓信号状态机 ---
+        1. 趋势策略 (当ADX>25时,表明市场处于趋势行情)
+           - 均线排列: sma90 > sma120 > sma250 (多头排列)
+           - 价格位置: 收盘价 > sma90 (位于短期均线上方)
+           - 量能确认: 当前成交量 > 20日均量线的1.2倍
+           - 量能持续性: 前一根K线成交量 > 20日均量线的1.0倍
+           - 趋势强度: ADX > 25
 
-        # 1. 定义“预备状态”的触发条件
-        #    当处于大多头趋势(sma120 > sma250)中,且发生金叉时,进入预备状态。
-        is_prep_state_start = (dataframe["sma120"] > dataframe["sma250"]) & dataframe[
-            "sma90_cross_sma120_golden"
-        ]
+        2. 反转策略 (当ADX<20时,表明市场处于震荡行情)
+           - 技术形态: 出现RSI底背离信号 (价格创新低而RSI未创新低)
+           - 超卖区域: RSI < 30
+           - 量能确认: 当前成交量 > 20日均量线的2.0倍
+           - 量能持续性: 前一根K线成交量 > 20日均量线的1.5倍
+           - 趋势强度: ADX < 20
 
-        # 2. 构建可靠的状态管理(最终修正版)
-        #    原理:定义状态的“开启点”和“关闭点”,然后用ffill填充中间状态。
-        dataframe["state_prepairing"] = np.nan
+        满足任一策略条件即触发开仓信号。
+        """
 
-        #    - 开启点:金叉发生时,将状态标记为 1
-        dataframe.loc[is_prep_state_start, "state_prepairing"] = 1
-
-        #    - 关闭点 1:死叉发生时,将状态标记为 0
-        dataframe.loc[dataframe["sma90_cross_sma120_dead"], "state_prepairing"] = 0
-
-        #    向前填充,形成初步的状态区间
-        dataframe["state_prepairing"] = dataframe["state_prepairing"].ffill()
-        #    将 NaN(通常是数据开头部分)填充为0, 表示默认非预备状态
-        dataframe["state_prepairing"] = dataframe["state_prepairing"].fillna(0)
-
-        # 3. 定义最终的“开仓”触发条件
-        conditions = (
-            (dataframe["state_prepairing"] == 1)  # 条件一:必须处于预备状态
-            & dataframe["bullish_divergence"]  # 条件二:RSI底背离信号出现
-            & (dataframe["rsi"] < self.buy_rsi.value)  # 条件三:RSI值低于设定的阈值
-            & (
-                dataframe["volume"] > dataframe["volume"].rolling(20).mean() * 1.5
-            )  # 条件四:成交量大于20日均线1.5倍
-            & (dataframe["adx"] > 25)  # 条件五:趋势强度过滤
-            & (dataframe["volume"] > 0)
+        # 修改趋势策略条件
+        trend_conditions = (
+            (dataframe["sma90"] > dataframe["sma120"])
+            & (qtpylib.crossed_above(dataframe["sma90"], dataframe["sma120"]))  # 添加金叉确认
+            & (dataframe["close"] > dataframe["sma90"])
+            & (dataframe["volume_pct"] > 1.5)  # 从1.2提高到1.5
+            & (dataframe["adx"] > 20)  # 从25降至20
         )
 
-        #    - 关闭点 2:开仓动作本身也会关闭状态,防止重复开仓。
-        #      在开仓的位置,也将状态标记为 0
-        dataframe.loc[conditions, "state_prepairing"] = 0
+        # 修改反转策略条件
+        reversal_conditions = (
+            dataframe["bullish_divergence"]
+            & (dataframe["rsi"] < 28)  # 从30降至28
+            & (dataframe["close"] < dataframe["sma250"] * 0.93)  # 添加价格位置过滤
+            & (dataframe["volume_pct"] > 2.5)  # 从2.0提高到2.5
+            & (dataframe["volume_pct"].shift(1) > 1.8)  # 从1.5提高到1.8
+            & (dataframe["adx"] < 15)  # 从20降至15
+        )
 
-        # 4. 再次向前填充,确保开仓后的状态 0 能被正确传播
-        dataframe["state_prepairing"] = dataframe["state_prepairing"].ffill()
-
-        # 5. 根据最终计算的 conditions 设置开仓信号
+        # 合并条件
+        conditions = trend_conditions | reversal_conditions
         dataframe.loc[conditions, "enter_long"] = 1
 
         # --- 日志记录 ---
-        # 记录“预备状态”触发的时刻
-        prep_signal_candles = dataframe[is_prep_state_start]
-        for index, row in prep_signal_candles.iterrows():
+        # 记录趋势策略开仓
+        trend_signals = dataframe[trend_conditions]
+        for index, row in trend_signals.iterrows():
             print(
-                f"开仓预备信号触发: 交易对={metadata['pair']}, "
-                f"时间={row['date']}, 价格={row['close']}"
+                f"趋势策略开仓: 交易对={metadata['pair']}, "
+                f"时间={row['date']}, 价格={row['close']:.2f}, ADX={row['adx']:.1f}"
             )
 
-        # 记录“最终开仓”触发的时刻
-        final_signal_candles = dataframe[conditions]
-        for index, row in final_signal_candles.iterrows():
+        # 记录反转策略开仓
+        reversal_signals = dataframe[reversal_conditions]
+        for index, row in reversal_signals.iterrows():
             print(
-                f"最终开仓信号触发 (RSI背离): 交易对={metadata['pair']}, "
-                f"时间={row['date']}, 价格={row['close']}"
+                f"反转策略开仓: 交易对={metadata['pair']}, "
+                f"时间={row['date']}, 价格={row['close']:.2f}, RSI={row['rsi']:.1f}"
             )
 
         return dataframe
