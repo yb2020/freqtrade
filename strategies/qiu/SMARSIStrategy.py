@@ -68,11 +68,18 @@ class SMARSIStrategy(IStrategy):
 
     # Minimal ROI designed for the strategy.
     # This attribute will be overridden if the config file contains "minimal_roi".
-    minimal_roi = {"60": 0.01, "30": 0.02, "0": 0.04}
+    # minimal_roi = {"60": 0.01, "30": 0.02, "0": 0.04}
+    # minimal_roi = {"0": 0.05}
+    minimal_roi = {
+        "20": 0.024,  # 20分钟内达到2.4% (1.2倍止损)
+        "60": 0.03,  # 60分钟内3%
+        "120": 0.04,  # 120分钟内4%
+        "0": 0.06,  # 长期持仓6%
+    }
 
     # Optimal stoploss designed for the strategy.
     # This attribute will be overridden if the config file contains "stoploss".
-    stoploss = -0.05
+    stoploss = -0.02
 
     # Trailing stoploss
     trailing_stop = False
@@ -92,7 +99,7 @@ class SMARSIStrategy(IStrategy):
     startup_candle_count: int = 300
 
     # Strategy parameters
-    buy_rsi = IntParameter(10, 50, default=45, space="buy")
+    buy_rsi = IntParameter(25, 45, default=35, space="buy")
     sell_rsi = IntParameter(60, 90, default=70, space="sell")  # Optional order type mapping.
     order_types = {
         "entry": "limit",
@@ -167,7 +174,7 @@ class SMARSIStrategy(IStrategy):
         # ------------------------------------
 
         # ADX
-        # dataframe["adx"] = ta.ADX(dataframe)
+        dataframe["adx"] = ta.ADX(dataframe)
 
         # # Plus Directional Indicator / Movement
         # dataframe["plus_dm"] = ta.PLUS_DM(dataframe)
@@ -475,6 +482,10 @@ class SMARSIStrategy(IStrategy):
             (dataframe["state_prepairing"] == 1)  # 条件一:必须处于预备状态
             & dataframe["bullish_divergence"]  # 条件二:RSI底背离信号出现
             & (dataframe["rsi"] < self.buy_rsi.value)  # 条件三:RSI值低于设定的阈值
+            & (
+                dataframe["volume"] > dataframe["volume"].rolling(20).mean() * 1.5
+            )  # 条件四:成交量大于20日均线1.5倍
+            & (dataframe["adx"] > 25)  # 条件五:趋势强度过滤
             & (dataframe["volume"] > 0)
         )
 
