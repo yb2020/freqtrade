@@ -92,7 +92,7 @@ class SMARSIStrategy(IStrategy):
     startup_candle_count: int = 300
 
     # Strategy parameters
-    buy_rsi = IntParameter(10, 40, default=30, space="buy")
+    buy_rsi = IntParameter(10, 50, default=45, space="buy")
     sell_rsi = IntParameter(60, 90, default=70, space="sell")  # Optional order type mapping.
     order_types = {
         "entry": "limit",
@@ -216,9 +216,7 @@ class SMARSIStrategy(IStrategy):
         dataframe["rsi_higher_low"] = dataframe["rsi"] > dataframe["rsi"].shift(1).rolling(14).min()
 
         # 3. Combine conditions to create the final divergence signal(预备状态)
-        dataframe["bullish_divergence"] = (
-            dataframe["price_new_low"] & dataframe["rsi_higher_low"] & (dataframe["rsi"] < 50)
-        )
+        dataframe["bullish_divergence"] = dataframe["price_new_low"] & dataframe["rsi_higher_low"]
 
         # # Inverse Fisher transform on RSI: values [-1.0, 1.0] (https://goo.gl/2JGGoy)
         # rsi = 0.1 * (dataframe["rsi"] - 50)
@@ -476,6 +474,7 @@ class SMARSIStrategy(IStrategy):
         conditions = (
             (dataframe["state_prepairing"] == 1)  # 条件一:必须处于预备状态
             & dataframe["bullish_divergence"]  # 条件二:RSI底背离信号出现
+            & (dataframe["rsi"] < self.buy_rsi.value)  # 条件三:RSI值低于设定的阈值
             & (dataframe["volume"] > 0)
         )
 
@@ -517,7 +516,12 @@ class SMARSIStrategy(IStrategy):
         """
         dataframe.loc[
             (
-                (qtpylib.crossed_below(dataframe["sma90"], dataframe["sma120"]))  # Death cross
+                (
+                    (qtpylib.crossed_below(dataframe["sma90"], dataframe["sma120"]))  # Death cross
+                    | (
+                        qtpylib.crossed_below(dataframe["close"], dataframe["sma250"])
+                    )  # Price crosses below sma250
+                )
                 & (dataframe["volume"] > 0)  # Ensure there is volume
             ),
             "exit_long",
