@@ -312,7 +312,7 @@ class SMARSIStrategy(IStrategy):
         满足任一策略条件即触发开仓信号。
         """
 
-        # 修改趋势策略条件
+        # 趋势策略条件
         trend_conditions = (
             (dataframe["sma90"] > dataframe["sma120"])
             & (qtpylib.crossed_above(dataframe["sma90"], dataframe["sma120"]))  # 添加金叉确认
@@ -321,7 +321,7 @@ class SMARSIStrategy(IStrategy):
             & (dataframe["adx"] > 20)  # 从25降至20
         )
 
-        # 修改反转策略条件
+        # 反转策略条件
         reversal_conditions = (
             dataframe["bullish_divergence"]
             & (dataframe["rsi"] < 28)  # 从30降至28
