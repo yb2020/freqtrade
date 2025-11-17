@@ -69,13 +69,13 @@ class SMARSIStrategy(IStrategy):
     # Minimal ROI designed for the strategy.
     # This attribute will be overridden if the config file contains "minimal_roi".
     # minimal_roi = {"60": 0.01, "30": 0.02, "0": 0.04}
-    # minimal_roi = {"0": 0.05}
-    minimal_roi = {
-        "20": 0.024,  # 20分钟内达到2.4% (1.2倍止损)
-        "60": 0.03,  # 60分钟内3%
-        "120": 0.04,  # 120分钟内4%
-        "0": 0.06,  # 长期持仓6%
-    }
+    minimal_roi = {}
+    # minimal_roi = {
+    #     "20": 0.024,  # 20分钟内达到2.4% (1.2倍止损)
+    #     "60": 0.03,  # 60分钟内3%
+    #     "120": 0.04,  # 120分钟内4%
+    #     "0": 0.06,  # 长期持仓6%
+    # }
 
     # Optimal stoploss designed for the strategy.
     # This attribute will be overridden if the config file contains "stoploss".
@@ -312,27 +312,36 @@ class SMARSIStrategy(IStrategy):
         满足任一策略条件即触发开仓信号。
         """
 
+        # 上涨趋势确认
+        trend_up = (
+            (dataframe["sma90"] > dataframe["sma120"])
+            & (dataframe["sma120"] > dataframe["sma250"])
+            & (dataframe["adx"] > 20)  # 趋势确认,趋势强度大于[20-25]确认趋势存在
+            & (dataframe["adx"] < 70)  # 可能是趋势末尾
+        )
+
         # 趋势策略条件
         trend_conditions = (
-            (dataframe["sma90"] > dataframe["sma120"])
-            & (qtpylib.crossed_above(dataframe["sma90"], dataframe["sma120"]))  # 添加金叉确认
-            & (dataframe["close"] > dataframe["sma90"])
-            & (dataframe["volume_pct"] > 1.5)  # 从1.2提高到1.5
-            & (dataframe["adx"] > 20)  # 从25降至20
+            trend_up
+            & (qtpylib.crossed_above(dataframe["sma90"], dataframe["sma120"]))  # 金叉确认
+            & (dataframe["close"] > dataframe["sma250"])  # 价格大于长期均线sma250
+            # & (dataframe["volume_pct"] > 1.2)  # 量能确认
+            # & (dataframe["volume_pct"].shift(1) > 1.0)  # 量能持续性
         )
 
         # 反转策略条件
-        reversal_conditions = (
-            dataframe["bullish_divergence"]
-            & (dataframe["rsi"] < 28)  # 从30降至28
-            & (dataframe["close"] < dataframe["sma250"] * 0.93)  # 添加价格位置过滤
-            & (dataframe["volume_pct"] > 2.5)  # 从2.0提高到2.5
-            & (dataframe["volume_pct"].shift(1) > 1.8)  # 从1.5提高到1.8
-            & (dataframe["adx"] < 15)  # 从20降至15
-        )
+        # reversal_conditions = (
+        #     dataframe["bullish_divergence"]
+        #     & (dataframe["rsi"] < 28)  # 从30降至28
+        #     & (dataframe["close"] < dataframe["sma250"] * 0.93)  # 添加价格位置过滤
+        #     & (dataframe["volume_pct"] > 2.5)  # 从2.0提高到2.5
+        #     & (dataframe["volume_pct"].shift(1) > 1.8)  # 从1.5提高到1.8
+        #     & (dataframe["adx"] < 15)  # 从20降至15
+        # )
 
         # 合并条件
-        conditions = trend_conditions | reversal_conditions
+        # conditions = trend_conditions | reversal_conditions
+        conditions = trend_conditions
         dataframe.loc[conditions, "enter_long"] = 1
 
         # --- 日志记录 ---
@@ -345,12 +354,12 @@ class SMARSIStrategy(IStrategy):
             )
 
         # 记录反转策略开仓
-        reversal_signals = dataframe[reversal_conditions]
-        for index, row in reversal_signals.iterrows():
-            print(
-                f"反转策略开仓: 交易对={metadata['pair']}, "
-                f"时间={row['date']}, 价格={row['close']:.2f}, RSI={row['rsi']:.1f}"
-            )
+        # reversal_signals = dataframe[reversal_conditions]
+        # for index, row in reversal_signals.iterrows():
+        #     print(
+        #         f"反转策略开仓: 交易对={metadata['pair']}, "
+        #         f"时间={row['date']}, 价格={row['close']:.2f}, RSI={row['rsi']:.1f}"
+        #     )
 
         return dataframe
 
