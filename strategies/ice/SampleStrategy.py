@@ -82,19 +82,19 @@ class SampleStrategy(IStrategy):
     # trailing_stop_positive_offset = 0.0  # Disabled / not configured
 
     # Optimal timeframe for the strategy.
-    timeframe = "5m"
+    timeframe = "1m"
 
     # Run "populate_indicators()" only for new candle.
     process_only_new_candles = True
 
     # These values can be overridden in the config.
     use_exit_signal = True
-    exit_profit_only = False
+    exit_profit_only = True  # Only exit when in profit
     ignore_roi_if_entry_signal = False
 
     # Hyperoptable parameters
-    buy_rsi = IntParameter(low=1, high=50, default=30, space="buy", optimize=True, load=True)
-    sell_rsi = IntParameter(low=50, high=100, default=70, space="sell", optimize=True, load=True)
+    buy_rsi = IntParameter(low=1, high=50, default=20, space="buy", optimize=True, load=True)
+    sell_rsi = IntParameter(low=50, high=100, default=80, space="sell", optimize=True, load=True)
     short_rsi = IntParameter(low=51, high=100, default=70, space="sell", optimize=True, load=True)
     exit_short_rsi = IntParameter(low=1, high=50, default=30, space="buy", optimize=True, load=True)
 
@@ -113,17 +113,23 @@ class SampleStrategy(IStrategy):
     order_time_in_force = {"entry": "GTC", "exit": "GTC"}
 
     plot_config = {
-        "main_plot": {
-            "tema": {},
-            "sar": {"color": "white"},
+        'main_plot': {
+            'sma_10': {'color': '#FF5733'},
+            'sma_20': {'color': '#FFC300'},
+            'sma_30': {'color': '#DAF7A6'},
+            'sma_50': {'color': '#6E2C00'},
+            # Bollinger Bands
+            'bb_upperband': {'color': 'grey'},
+            'bb_middleband': {'color': 'grey'},
+            'bb_lowerband': {'color': 'grey'},
         },
-        "subplots": {
+        'subplots': {
             "MACD": {
-                "macd": {"color": "blue"},
-                "macdsignal": {"color": "orange"},
+                'macd': {'color': 'blue'},
+                'macdsignal': {'color': 'orange'},
             },
             "RSI": {
-                "rsi": {"color": "red"},
+                'rsi': {'color': 'red'},
             },
         },
     }
@@ -159,68 +165,68 @@ class SampleStrategy(IStrategy):
         # ADX
         dataframe["adx"] = ta.ADX(dataframe)
 
-        # # Plus Directional Indicator / Movement
-        # dataframe['plus_dm'] = ta.PLUS_DM(dataframe)
-        # dataframe['plus_di'] = ta.PLUS_DI(dataframe)
+        # Plus Directional Indicator / Movement
+        dataframe['plus_dm'] = ta.PLUS_DM(dataframe)
+        dataframe['plus_di'] = ta.PLUS_DI(dataframe)
 
-        # # Minus Directional Indicator / Movement
-        # dataframe['minus_dm'] = ta.MINUS_DM(dataframe)
-        # dataframe['minus_di'] = ta.MINUS_DI(dataframe)
+        # Minus Directional Indicator / Movement
+        dataframe['minus_dm'] = ta.MINUS_DM(dataframe)
+        dataframe['minus_di'] = ta.MINUS_DI(dataframe)
 
-        # # Aroon, Aroon Oscillator
-        # aroon = ta.AROON(dataframe)
-        # dataframe['aroonup'] = aroon['aroonup']
-        # dataframe['aroondown'] = aroon['aroondown']
-        # dataframe['aroonosc'] = ta.AROONOSC(dataframe)
+        # Aroon, Aroon Oscillator
+        aroon = ta.AROON(dataframe)
+        dataframe['aroonup'] = aroon['aroonup']
+        dataframe['aroondown'] = aroon['aroondown']
+        dataframe['aroonosc'] = ta.AROONOSC(dataframe)
 
-        # # Awesome Oscillator
-        # dataframe['ao'] = qtpylib.awesome_oscillator(dataframe)
+        # Awesome Oscillator
+        dataframe['ao'] = qtpylib.awesome_oscillator(dataframe)
 
-        # # Keltner Channel
-        # keltner = qtpylib.keltner_channel(dataframe)
-        # dataframe["kc_upperband"] = keltner["upper"]
-        # dataframe["kc_lowerband"] = keltner["lower"]
-        # dataframe["kc_middleband"] = keltner["mid"]
-        # dataframe["kc_percent"] = (
-        #     (dataframe["close"] - dataframe["kc_lowerband"]) /
-        #     (dataframe["kc_upperband"] - dataframe["kc_lowerband"])
-        # )
-        # dataframe["kc_width"] = (
-        #     (dataframe["kc_upperband"] - dataframe["kc_lowerband"]) / dataframe["kc_middleband"]
-        # )
+        # Keltner Channel
+        keltner = qtpylib.keltner_channel(dataframe)
+        dataframe["kc_upperband"] = keltner["upper"]
+        dataframe["kc_lowerband"] = keltner["lower"]
+        dataframe["kc_middleband"] = keltner["mid"]
+        dataframe["kc_percent"] = (
+            (dataframe["close"] - dataframe["kc_lowerband"]) /
+            (dataframe["kc_upperband"] - dataframe["kc_lowerband"])
+        )
+        dataframe["kc_width"] = (
+            (dataframe["kc_upperband"] - dataframe["kc_lowerband"]) / dataframe["kc_middleband"]
+        )
 
-        # # Ultimate Oscillator
-        # dataframe['uo'] = ta.ULTOSC(dataframe)
+        # Ultimate Oscillator
+        dataframe['uo'] = ta.ULTOSC(dataframe)
 
-        # # Commodity Channel Index: values [Oversold:-100, Overbought:100]
-        # dataframe['cci'] = ta.CCI(dataframe)
+        # Commodity Channel Index: values [Oversold:-100, Overbought:100]
+        dataframe['cci'] = ta.CCI(dataframe)
 
         # RSI
         dataframe["rsi"] = ta.RSI(dataframe)
 
-        # # Inverse Fisher transform on RSI: values [-1.0, 1.0] (https://goo.gl/2JGGoy)
-        # rsi = 0.1 * (dataframe['rsi'] - 50)
-        # dataframe['fisher_rsi'] = (np.exp(2 * rsi) - 1) / (np.exp(2 * rsi) + 1)
+        # Inverse Fisher transform on RSI: values [-1.0, 1.0] (https://goo.gl/2JGGoy)
+        rsi = 0.1 * (dataframe['rsi'] - 50)
+        dataframe['fisher_rsi'] = (np.exp(2 * rsi) - 1) / (np.exp(2 * rsi) + 1)
 
-        # # Inverse Fisher transform on RSI normalized: values [0.0, 100.0] (https://goo.gl/2JGGoy)
-        # dataframe['fisher_rsi_norma'] = 50 * (dataframe['fisher_rsi'] + 1)
+        # Inverse Fisher transform on RSI normalized: values [0.0, 100.0] (https://goo.gl/2JGGoy)
+        dataframe['fisher_rsi_norma'] = 50 * (dataframe['fisher_rsi'] + 1)
 
-        # # Stochastic Slow
-        # stoch = ta.STOCH(dataframe)
-        # dataframe['slowd'] = stoch['slowd']
-        # dataframe['slowk'] = stoch['slowk']
+        # Stochastic Slow
+        stoch = ta.STOCH(dataframe)
+        dataframe['slowd'] = stoch['slowd']
+        dataframe['slowk'] = stoch['slowk']
 
         # Stochastic Fast
         stoch_fast = ta.STOCHF(dataframe)
         dataframe["fastd"] = stoch_fast["fastd"]
         dataframe["fastk"] = stoch_fast["fastk"]
 
-        # # Stochastic RSI
+        # Stochastic RSI
         # Please read https://github.com/freqtrade/freqtrade/issues/2961 before using this.
         # STOCHRSI is NOT aligned with tradingview, which may result in non-expected results.
-        # stoch_rsi = ta.STOCHRSI(dataframe)
-        # dataframe['fastd_rsi'] = stoch_rsi['fastd']
-        # dataframe['fastk_rsi'] = stoch_rsi['fastk']
+        stoch_rsi = ta.STOCHRSI(dataframe)
+        dataframe['fastd_rsi'] = stoch_rsi['fastd']
+        dataframe['fastk_rsi'] = stoch_rsi['fastk']
 
         # MACD
         macd = ta.MACD(dataframe)
@@ -281,8 +287,11 @@ class SampleStrategy(IStrategy):
         # dataframe['sma50'] = ta.SMA(dataframe, timeperiod=50)
         # dataframe['sma100'] = ta.SMA(dataframe, timeperiod=100)
 
-        # Parabolic SAR
-        dataframe["sar"] = ta.SAR(dataframe)
+        # 4 SMAs for strong trend detection
+        dataframe['sma_10'] = ta.SMA(dataframe, timeperiod=10)
+        dataframe['sma_20'] = ta.SMA(dataframe, timeperiod=20)
+        dataframe['sma_30'] = ta.SMA(dataframe, timeperiod=30)
+        dataframe['sma_50'] = ta.SMA(dataframe, timeperiod=50)
 
         # TEMA - Triple Exponential Moving Average
         dataframe["tema"] = ta.TEMA(dataframe, timeperiod=9)
@@ -371,9 +380,18 @@ class SampleStrategy(IStrategy):
         dataframe.loc[
             (
                 # Signal: RSI crosses above 30
-                (qtpylib.crossed_above(dataframe["rsi"], self.buy_rsi.value))
-                & (dataframe["tema"] <= dataframe["bb_middleband"])  # Guard: tema below BB middle
-                & (dataframe["tema"] > dataframe["tema"].shift(1))  # Guard: tema is raising
+                # 1. RSI signal: RSI crosses above buy_rsi
+                (qtpylib.crossed_above(dataframe["rsi"], self.buy_rsi.value)) &
+                # 2. Strong downtrend condition with 4 SMAs
+                (
+                    (dataframe['sma_10'] < dataframe['sma_20']) &
+                    (dataframe['sma_20'] < dataframe['sma_30']) &
+                    (dataframe['sma_30'] < dataframe['sma_50'])
+                ) &
+                # Check for recent K-line downtrend
+                (dataframe['close'] < dataframe['close'].shift(5)) &
+                # 3. Bollinger Band: Price touches the lower band
+                (dataframe['low'] <= dataframe['bb_lowerband'])
                 & (dataframe["volume"] > 0)  # Make sure Volume is not 0
             ),
             "enter_long",
@@ -401,11 +419,11 @@ class SampleStrategy(IStrategy):
         """
         dataframe.loc[
             (
-                # Signal: RSI crosses above 70
-                (qtpylib.crossed_above(dataframe["rsi"], self.sell_rsi.value))
-                & (dataframe["tema"] > dataframe["bb_middleband"])  # Guard: tema above BB middle
-                & (dataframe["tema"] < dataframe["tema"].shift(1))  # Guard: tema is falling
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
+                # 1. RSI is above 65 (take profit zone)
+                (dataframe['rsi'] > 65) &
+                # 2. Price is above Bollinger Band upper band
+                (dataframe['close'] > dataframe['bb_upperband']) &
+                (dataframe["volume"] > 0)  # Make sure Volume is not 0
             ),
             "exit_long",
         ] = 1
