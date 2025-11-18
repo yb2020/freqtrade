@@ -205,26 +205,64 @@ class MyRsiStrategy(IStrategy):
         dataframe["price_low_5"] = dataframe["low"].shift(1).rolling(5).min()  # 前5根K线最低价
         dataframe["rsi_low_5"] = dataframe["rsi"].shift(1).rolling(5).min()  # 前5根K线最低RSI
 
-        # 2. 定义“潜在反转信号”: RSI底背离
-        potential_reversal_signal = (
-            (dataframe["rsi"] < 30)  # 条件1: 首先,必须在RSI<30的“猎杀区”
-            &
-            # 条件2: 其次,必须出现“底背离”结构
-            (dataframe["low"] < dataframe["price_low_5"])  # 价格创新低
-            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 5)  # RSI 必须明显上升,且大于5以上的上升
-            # 条件3: 最后,必须有“确认拐点”
-            & (dataframe["rsi"] > dataframe["rsi"].shift(1) + 2)  # 且加速上升
+        # 2. 定义"潜在反转信号": RSI底背离(多路径识别)
+
+        # 路径1: 强背离[严格条件]
+        strong_divergence = (
+            (dataframe["rsi"] < 30)  # RSI 超卖
+            & (dataframe["low"] < dataframe["price_low_5"])  # 价格创新低
+            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 5)  # RSI 明显上升 (+5)
+            & (dataframe["rsi"] > dataframe["rsi"].shift(1) + 2)  # 且加速上升 (+2)
         )
+
+        # 路径2: 弱背离[放宽 RSI 条件]
+        weak_divergence = (
+            (dataframe["rsi"] < 30)  # RSI 超卖
+            & (dataframe["low"] < dataframe["price_low_5"])  # 价格创新低
+            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 2)  # 弱背离 (+2 即可)
+            & (dataframe["rsi"] > dataframe["rsi"].shift(1))  # RSI 上升[不要求加速]
+        )
+
+        # 最终信号: 两条路径任一满足
+        potential_reversal_signal = strong_divergence | weak_divergence
 
         # 将信号向前“传播”5根K线,形成一个有效的“信号窗口”
         dataframe["signal_window"] = potential_reversal_signal.rolling(
             window=5, min_periods=1
         ).max()
 
-        # 3. 定义完整的“价格行为确认信号”
-        price_confirmation = (
-            (dataframe["close"] > dataframe["price_low_5"])  # 确认1: 价格收复失地
-            & (dataframe["close"] > dataframe["open"])  # 确认2: K线为实体阳线
+        # 3. 定义完整的"价格行为确认信号"
+        # 为路径2[弱背离]增加更强的价格确认要求
+
+        # 基础价格确认[适用于路径1强背离]
+        basic_price_confirmation = (
+            (dataframe["close"] > dataframe["price_low_5"])  # 价格收复失地
+            & (dataframe["close"] > dataframe["open"])  # K线为实体阳线
+        )
+
+        # 强价格确认[适用于路径2弱背离]
+        strong_price_confirmation = (
+            (dataframe["close"] > dataframe["price_low_5"] * 1.005)  # 价格突破 0.5%
+            & (dataframe["close"] > dataframe["open"])  # K线为实体阳线
+            & (
+                (dataframe["close"] - dataframe["open"]) / dataframe["open"] > 0.005
+            )  # 阳线实体 > 0.5%
+            & (dataframe["volume"] > dataframe["volume"].rolling(20).mean() * 1.2)  # 成交量放大 20%
+        )
+
+        # 判断是哪条路径触发的信号
+        is_strong_divergence = (
+            (dataframe["rsi"] < 30)
+            & (dataframe["low"] < dataframe["price_low_5"])
+            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 5)
+            & (dataframe["rsi"] > dataframe["rsi"].shift(1) + 2)
+        )
+
+        # 根据路径选择确认条件
+        price_confirmation = np.where(
+            is_strong_divergence.shift(1),
+            basic_price_confirmation,  # 强背离用基础确认
+            strong_price_confirmation,  # 弱背离用强确认
         )
 
         # 4. 最终入场条件: 在信号窗口内,等待价格行为的最终确认
