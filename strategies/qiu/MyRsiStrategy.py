@@ -286,7 +286,7 @@ class MyRsiStrategy(IStrategy):
 
         # 将止损价格存储在专用列中供 custom_stoploss 使用
         # 放宽止损距离以给予更多空间
-        dataframe.loc[conditions, "stop_price"] = dataframe["price_low_10"] * 0.995
+        dataframe.loc[conditions, "stop_price"] = dataframe["price_low_10"] * 0.99
 
         return dataframe
 
