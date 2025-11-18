@@ -201,34 +201,36 @@ class MyRsiStrategy(IStrategy):
 
         # --- RSI底背离入场逻辑 ---
 
-        # 1. 定义价格和RSI在过去5个周期内的最低值
-        dataframe["price_low_5"] = dataframe["low"].shift(1).rolling(5).min()  # 前5根K线最低价
-        dataframe["rsi_low_5"] = dataframe["rsi"].shift(1).rolling(5).min()  # 前5根K线最低RSI
+        # 1. 定义价格和RSI在过去周期内的最低值
+        # 延长回溯周期以捕捉更长时间的真实底部
+        dataframe["price_low_10"] = dataframe["low"].shift(1).rolling(10).min()  # 前10根K线最低价
+        dataframe["rsi_low_10"] = dataframe["rsi"].shift(1).rolling(10).min()  # 前10根K线最低RSI
 
         # 2. 定义"潜在反转信号": RSI底背离(多路径识别)
 
         # 路径1: 强背离[严格条件]
         strong_divergence = (
             (dataframe["rsi"] < 30)  # RSI 超卖
-            & (dataframe["low"] < dataframe["price_low_5"])  # 价格创新低
-            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 5)  # RSI 明显上升 (+5)
+            & (dataframe["low"] < dataframe["price_low_10"] * 0.998)  # 价格突破更明显
+            & (dataframe["rsi"] > dataframe["rsi_low_10"] + 5)  # RSI 明显上升 (+5)
             & (dataframe["rsi"] > dataframe["rsi"].shift(1) + 2)  # 且加速上升 (+2)
+            & (dataframe["volume"] > dataframe["volume"].rolling(10).mean() * 1.2)  # 加入成交量确认
         )
 
         # 路径2: 弱背离[放宽 RSI 条件]
         weak_divergence = (
             (dataframe["rsi"] < 30)  # RSI 超卖
-            & (dataframe["low"] < dataframe["price_low_5"])  # 价格创新低
-            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 2)  # 弱背离 (+2 即可)
+            & (dataframe["low"] < dataframe["price_low_10"])  # 价格创新低
+            & (dataframe["rsi"] > dataframe["rsi_low_10"] + 3)  # 弱背离 (+3 即可)
             & (dataframe["rsi"] > dataframe["rsi"].shift(1))  # RSI 上升[不要求加速]
         )
 
         # 最终信号: 两条路径任一满足
         potential_reversal_signal = strong_divergence | weak_divergence
 
-        # 将信号向前“传播”5根K线,形成一个有效的“信号窗口”
+        # 将信号向前“传播”3根K线,形成一个有效的“信号窗口”
         dataframe["signal_window"] = potential_reversal_signal.rolling(
-            window=5, min_periods=1
+            window=3, min_periods=1
         ).max()
 
         # 3. 定义完整的"价格行为确认信号"
@@ -236,13 +238,13 @@ class MyRsiStrategy(IStrategy):
 
         # 基础价格确认[适用于路径1强背离]
         basic_price_confirmation = (
-            (dataframe["close"] > dataframe["price_low_5"])  # 价格收复失地
+            (dataframe["close"] > dataframe["price_low_10"])  # 价格收复失地
             & (dataframe["close"] > dataframe["open"])  # K线为实体阳线
         )
 
         # 强价格确认[适用于路径2弱背离]
         strong_price_confirmation = (
-            (dataframe["close"] > dataframe["price_low_5"] * 1.005)  # 价格突破 0.5%
+            (dataframe["close"] > dataframe["price_low_10"] * 1.005)  # 价格突破 0.5%
             & (dataframe["close"] > dataframe["open"])  # K线为实体阳线
             & (
                 (dataframe["close"] - dataframe["open"]) / dataframe["open"] > 0.005
@@ -253,8 +255,8 @@ class MyRsiStrategy(IStrategy):
         # 判断是哪条路径触发的信号[用于价格确认选择]
         is_strong_div_shifted = (
             (dataframe["rsi"].shift(1) < 30)
-            & (dataframe["low"].shift(1) < dataframe["price_low_5"].shift(1))
-            & (dataframe["rsi"].shift(1) > dataframe["rsi_low_5"].shift(1) + 5)
+            & (dataframe["low"].shift(1) < dataframe["price_low_10"].shift(1))
+            & (dataframe["rsi"].shift(1) > dataframe["rsi_low_10"].shift(1) + 5)
             & (dataframe["rsi"].shift(1) > dataframe["rsi"].shift(2) + 2)
         )
 
@@ -283,10 +285,12 @@ class MyRsiStrategy(IStrategy):
         dataframe.loc[weak_entry, "enter_tag"] = "buy_weak"
 
         # 将止损价格存储在专用列中供 custom_stoploss 使用
-        dataframe.loc[conditions, "stop_price"] = dataframe["price_low_5"] * 0.998
+        # 放宽止损距离以给予更多空间
+        dataframe.loc[conditions, "stop_price"] = dataframe["price_low_10"] * 0.995
 
         return dataframe
 
+    # 复写出场逻辑
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
         Based on TA indicators, populates the exit signal for the given dataframe
@@ -294,17 +298,18 @@ class MyRsiStrategy(IStrategy):
         :param metadata: Additional information, like the currently traded pair
         :return: DataFrame with exit columns populated
         """
-        dataframe.loc[
-            (
-                (
-                    qtpylib.crossed_above(dataframe["rsi"], self.sell_rsi.value)
-                )  # Signal: RSI crosses above sell_rsi
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
-            ),
-            "exit_long",
-        ] = 1
+        # dataframe.loc[
+        #     (
+        #         (
+        #             qtpylib.crossed_above(dataframe["rsi"], self.sell_rsi.value)
+        #         )  # Signal: RSI crosses above sell_rsi
+        #         & (dataframe["volume"] > 0)  # Make sure Volume is not 0
+        #     ),
+        #     "exit_long",
+        # ] = 1
         return dataframe
 
+    # 自定义止损
     def custom_stoploss(
         self,
         pair: str,
@@ -333,4 +338,44 @@ class MyRsiStrategy(IStrategy):
                 return stop_loss_pct
 
         # 如果无法获取,使用默认止损
+        return None
+
+    # 自定义出场
+    def custom_exit(
+        self,
+        pair: str,
+        trade: Trade,
+        current_time: datetime,
+        current_rate: float,
+        current_profit: float,
+        **kwargs,
+    ):
+        """
+        分类出场策略: 根据 enter_tag 设置不同的出场条件
+        - 强背离(buy_strong): RSI > 70 (更贪婪)
+        - 弱背离(buy_weak): RSI > 60 (更保守)
+        """
+        # 获取当前这笔交易的入场标签
+        enter_tag = trade.enter_tag or ""
+
+        # 获取最新的RSI值
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        if dataframe.empty:
+            return None
+
+        # 只在有盈利时考虑出场
+        if current_profit <= 0:
+            return None
+
+        # 如果是 'buy_strong',则 RSI 上穿 70 才出场
+        if enter_tag == "buy_strong":
+            if qtpylib.crossed_above(dataframe["rsi"], 70).iloc[-1]:
+                return "exit_strong_rsi_70"
+
+        # 如果是 'buy_weak',则 RSI 上穿 60 就出场
+        if enter_tag == "buy_weak":
+            if qtpylib.crossed_above(dataframe["rsi"], 60).iloc[-1]:
+                return "exit_weak_rsi_60"
+
+        # 其他情况不出场
         return None
