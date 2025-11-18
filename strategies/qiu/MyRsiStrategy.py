@@ -374,8 +374,8 @@ class MyRsiStrategy(IStrategy):
 
         # 如果是 'buy_weak',则 RSI 上穿 60 就出场
         if enter_tag == "buy_weak":
-            if qtpylib.crossed_above(dataframe["rsi"], 60).iloc[-1]:
-                return "exit_weak_rsi_60"
+            if qtpylib.crossed_above(dataframe["rsi"], 50).iloc[-1]:
+                return "exit_weak_rsi_50"
 
         # 其他情况不出场
         return None
