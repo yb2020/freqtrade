@@ -288,7 +288,7 @@ class MyRsiStrategy(IStrategy):
         # 放宽止损距离以给予更多空间
         dataframe.loc[conditions, "stop_price"] = dataframe["price_low_10"] * 0.99
         # dataframe.loc[strong_entry, "stop_price"] = dataframe["price_low_10"] * 0.99
-        # dataframe.loc[weak_entry, "stop_price"] = dataframe["price_low_10"]
+        # dataframe.loc[weak_entry, "stop_price"] = dataframe["price_low_10"] * 0.993
 
         return dataframe
 
@@ -371,10 +371,16 @@ class MyRsiStrategy(IStrategy):
 
         # 如果是 'buy_strong',则 RSI 上穿 70 才出场
         if enter_tag == "buy_strong":
-            if qtpylib.crossed_above(dataframe["rsi"], 70).iloc[-1]:
-                return "exit_strong_rsi_70"
+            if qtpylib.crossed_above(dataframe["rsi"], 75).iloc[-1]:
+                return "exit_strong_rsi_75"
+            if qtpylib.crossed_below(dataframe["rsi"], 65).iloc[-1]:
+                return "exit_strong_rsi_65"
+            if qtpylib.crossed_below(dataframe["rsi"], 55).iloc[-1]:
+                return "exit_strong_rsi_55"
+            if qtpylib.crossed_below(dataframe["rsi"], 50).iloc[-1]:
+                return "exit_strong_rsi_50"
 
-        # 如果是 'buy_weak',则 RSI 上穿 60 就出场
+        # 如果是 'buy_weak',则 RSI 上穿 50 就出场
         if enter_tag == "buy_weak":
             if qtpylib.crossed_above(dataframe["rsi"], 50).iloc[-1]:
                 return "exit_weak_rsi_50"
