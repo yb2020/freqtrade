@@ -342,6 +342,32 @@ class MyRsiStrategy(IStrategy):
         # 如果无法获取,使用默认止损
         return None
 
+    def _check_strong_exit(self, dataframe: DataFrame) -> str | None:
+        """检查强信号退出条件"""
+        if qtpylib.crossed_above(dataframe["rsi"], 75).iloc[-1]:
+            return "exit_strong_rsi_75"
+        if qtpylib.crossed_below(dataframe["rsi"], 70).iloc[-1]:
+            return "exit_strong_rsi_70"
+        if qtpylib.crossed_below(dataframe["rsi"], 65).iloc[-1]:
+            return "exit_strong_rsi_65"
+        if qtpylib.crossed_below(dataframe["rsi"], 55).iloc[-1]:
+            return "exit_strong_rsi_55"
+        if qtpylib.crossed_below(dataframe["rsi"], 50).iloc[-1]:
+            return "exit_strong_rsi_50"
+        return None
+
+    def _check_weak_exit(self, dataframe: DataFrame) -> str | None:
+        """检查弱信号退出条件"""
+        if qtpylib.crossed_above(dataframe["rsi"], 75).iloc[-1]:
+            return "exit_weak_rsi_75"
+        if qtpylib.crossed_below(dataframe["rsi"], 65).iloc[-1]:
+            return "exit_weak_rsi_65"
+        if qtpylib.crossed_below(dataframe["rsi"], 55).iloc[-1]:
+            return "exit_weak_rsi_55"
+        if qtpylib.crossed_below(dataframe["rsi"], 50).iloc[-1]:
+            return "exit_weak_rsi_50"
+        return None
+
     # 自定义出场
     def custom_exit(
         self,
@@ -354,36 +380,23 @@ class MyRsiStrategy(IStrategy):
     ):
         """
         分类出场策略: 根据 enter_tag 设置不同的出场条件
-        - 强背离(buy_strong): RSI > 70 (更贪婪)
-        - 弱背离(buy_weak): RSI > 60 (更保守)
+        - 强背离(buy_strong): 多层RSI退出
+        - 弱背离(buy_weak): 多层RSI退出
         """
-        # 获取当前这笔交易的入场标签
-        enter_tag = trade.enter_tag or ""
+        # 只在有盈利时考虑出场
+        if current_profit <= 0:
+            return None
 
         # 获取最新的RSI值
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         if dataframe.empty:
             return None
 
-        # 只在有盈利时考虑出场
-        if current_profit <= 0:
-            return None
-
-        # 如果是 'buy_strong',则 RSI 上穿 70 才出场
+        # 根据入场标签选择退出策略
+        enter_tag = trade.enter_tag or ""
         if enter_tag == "buy_strong":
-            if qtpylib.crossed_above(dataframe["rsi"], 75).iloc[-1]:
-                return "exit_strong_rsi_75"
-            if qtpylib.crossed_below(dataframe["rsi"], 65).iloc[-1]:
-                return "exit_strong_rsi_65"
-            if qtpylib.crossed_below(dataframe["rsi"], 55).iloc[-1]:
-                return "exit_strong_rsi_55"
-            if qtpylib.crossed_below(dataframe["rsi"], 50).iloc[-1]:
-                return "exit_strong_rsi_50"
-
-        # 如果是 'buy_weak',则 RSI 上穿 50 就出场
+            return self._check_strong_exit(dataframe)
         if enter_tag == "buy_weak":
-            if qtpylib.crossed_above(dataframe["rsi"], 50).iloc[-1]:
-                return "exit_weak_rsi_50"
+            return self._check_weak_exit(dataframe)
 
-        # 其他情况不出场
         return None
