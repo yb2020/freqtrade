@@ -94,7 +94,7 @@ class SampleStrategy(IStrategy):
 
     # Hyperoptable parameters
     buy_rsi = IntParameter(low=1, high=50, default=20, space="buy", optimize=True, load=True)
-    sell_rsi = IntParameter(low=50, high=100, default=80, space="sell", optimize=True, load=True)
+    sell_rsi = IntParameter(low=50, high=100, default=60, space="sell", optimize=True, load=True)
     short_rsi = IntParameter(low=51, high=100, default=70, space="sell", optimize=True, load=True)
     exit_short_rsi = IntParameter(low=1, high=50, default=30, space="buy", optimize=True, load=True)
 
@@ -419,8 +419,8 @@ class SampleStrategy(IStrategy):
         """
         dataframe.loc[
             (
-                # 1. RSI is above 65 (take profit zone)
-                (dataframe['rsi'] > 65) &
+                # 1. RSI is above sell_rsi (take profit zone)
+                (dataframe['rsi'] > self.sell_rsi.value) &
                 # 2. Price is above Bollinger Band upper band
                 (dataframe['close'] > dataframe['bb_upperband']) &
                 (dataframe["volume"] > 0)  # Make sure Volume is not 0
