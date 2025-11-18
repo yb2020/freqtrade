@@ -211,9 +211,9 @@ class MyRsiStrategy(IStrategy):
             &
             # 条件2: 其次,必须出现“底背离”结构
             (dataframe["low"] < dataframe["price_low_5"])  # 价格创新低
-            & (dataframe["rsi"] > dataframe["rsi_low_5"])  # RSI未创新低
+            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 5)  # RSI 必须明显上升,且大于5以上的上升
             # 条件3: 最后,必须有“确认拐点”
-            & (dataframe["rsi"] > dataframe["rsi"].shift(1))
+            & (dataframe["rsi"] > dataframe["rsi"].shift(1) + 2)  # 且加速上升
         )
 
         # 将信号向前“传播”5根K线,形成一个有效的“信号窗口”
