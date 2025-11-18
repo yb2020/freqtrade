@@ -78,7 +78,7 @@ class MyRsiStrategy(IStrategy):
     # This attribute will be overridden if the config file contains "stoploss".
     stoploss = -0.02
 
-    # Trailing stoploss
+    # Trailing stoploss - 我们使用自定义动态止损,因此必须禁用追踪止损
     trailing_stop = False
     # trailing_only_offset_is_reached = False
     # trailing_stop_positive = 0.01
@@ -86,6 +86,9 @@ class MyRsiStrategy(IStrategy):
 
     # Run "populate_indicators()" only for new candle.
     process_only_new_candles = True
+
+    # Custom stoploss
+    use_custom_stoploss = True
 
     # These values can be overridden in the config.
     use_exit_signal = True
@@ -225,14 +228,13 @@ class MyRsiStrategy(IStrategy):
         )
 
         # 4. 最终入场条件: 在信号窗口内,等待价格行为的最终确认
-        dataframe.loc[
-            (
-                (dataframe["signal_window"].shift(1) == 1)  # 条件1: 处于激活的信号窗口内
-                & price_confirmation  # 条件2: 出现完整的价格行为确认信号
-                & (dataframe["volume"] > 0)
-            ),
-            "enter_long",
-        ] = 1
+        conditions = (
+            (dataframe["signal_window"].shift(1) == 1)  # 条件1: 处于激活的信号窗口内
+            & price_confirmation  # 条件2: 出现完整的价格行为确认信号
+            & (dataframe["volume"] > 0)
+        )
+        dataframe.loc[conditions, "enter_long"] = 1
+        dataframe.loc[conditions, "custom_stoploss"] = dataframe["price_low_5"] * 0.998
 
         return dataframe
 
