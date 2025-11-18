@@ -79,7 +79,7 @@ class SMARSIStrategy(IStrategy):
 
     # Optimal stoploss designed for the strategy.
     # This attribute will be overridden if the config file contains "stoploss".
-    stoploss = -0.03
+    stoploss = -0.02
 
     # Trailing stoploss
     trailing_stop = False
@@ -158,15 +158,21 @@ class SMARSIStrategy(IStrategy):
         **kwargs,
     ) -> float | None:  # 修正返回类型
         # 获取当前K线数据
-        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
-        if dataframe.empty:
-            return -0.03  # 默认止损
+        # dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+        # if dataframe.empty:
+        #     return -0.03  # 默认止损
 
-        # 找到当前时间对应的行
-        current_candle = dataframe.iloc[-1]
-        atr_value = current_candle["atr"]
-        current_close = current_candle["close"]
-        return -0.75 * atr_value / current_close  # 计算动态止损
+        # # 找到当前时间对应的行
+        # current_candle = dataframe.iloc[-1]
+        # --- 盈利保护止损逻辑 ---
+        # 如果当前利润大于2%
+        if current_profit > 0.02:
+            # 将止损位设置在当前价格下方1%的位置。
+            # 这将锁定至少 (2% - 1%) = 1% 的利润。
+            return -0.01
+
+        # 否则,保持-3%的初始止损 (通过返回None,使用stoploss属性)
+        return None
 
     def informative_pairs(self):
         """
@@ -195,8 +201,10 @@ class SMARSIStrategy(IStrategy):
         # Momentum Indicators
         # ------------------------------------
 
-        # ADX
+        # ADX / DMI
         dataframe["adx"] = ta.ADX(dataframe)
+        dataframe["plus_di"] = ta.PLUS_DI(dataframe)
+        dataframe["minus_di"] = ta.MINUS_DI(dataframe)
 
         # RSI
         dataframe["rsi"] = ta.RSI(dataframe)
@@ -312,21 +320,25 @@ class SMARSIStrategy(IStrategy):
         满足任一策略条件即触发开仓信号。
         """
 
-        # 上涨趋势确认
-        trend_up = (
-            (dataframe["sma90"] > dataframe["sma120"])
-            & (dataframe["sma120"] > dataframe["sma250"])
-            & (dataframe["adx"] > 20)  # 趋势确认,趋势强度大于[20-25]确认趋势存在
-            & (dataframe["adx"] < 70)  # 可能是趋势末尾
+        # 1. 结构确认: 均线多头排列
+        structural_trend = (dataframe["sma90"] > dataframe["sma120"]) & (
+            dataframe["sma120"] > dataframe["sma250"]
         )
 
-        # 趋势策略条件
-        trend_conditions = (
-            trend_up
-            & (qtpylib.crossed_above(dataframe["sma90"], dataframe["sma120"]))  # 金叉确认
-            & (dataframe["close"] > dataframe["sma250"])  # 价格大于长期均线sma250
-            # & (dataframe["volume_pct"] > 1.2)  # 量能确认
-            # & (dataframe["volume_pct"].shift(1) > 1.0)  # 量能持续性
+        # 2. 强度、方向和动能确认
+        momentum_filter = (
+            (dataframe["adx"] > 25)  # 趋势强度足够
+            & (dataframe["plus_di"] > dataframe["minus_di"])  # 多头主导
+            & (dataframe["adx"] > dataframe["adx"].shift(1))  # 趋势正在增强
+        )
+
+        # 最终开仓条件
+        conditions = (
+            structural_trend
+            & momentum_filter
+            & qtpylib.crossed_above(dataframe["close"], dataframe["sma90"])  # 回调结束信号
+            & (dataframe["close"] > dataframe["open"])
+            & (dataframe["close"] > dataframe["close"].shift(1))
         )
 
         # 反转策略条件
@@ -339,14 +351,11 @@ class SMARSIStrategy(IStrategy):
         #     & (dataframe["adx"] < 15)  # 从20降至15
         # )
 
-        # 合并条件
-        # conditions = trend_conditions | reversal_conditions
-        conditions = trend_conditions
         dataframe.loc[conditions, "enter_long"] = 1
 
         # --- 日志记录 ---
         # 记录趋势策略开仓
-        trend_signals = dataframe[trend_conditions]
+        trend_signals = dataframe[conditions]
         for index, row in trend_signals.iterrows():
             print(
                 f"趋势策略开仓: 交易对={metadata['pair']}, "
@@ -370,17 +379,34 @@ class SMARSIStrategy(IStrategy):
         :param metadata: Additional information, like the currently traded pair
         :return: DataFrame with exit columns populated
         """
-        dataframe.loc[
-            (
-                (
-                    (qtpylib.crossed_below(dataframe["sma90"], dataframe["sma120"]))  # Death cross
-                    | (
-                        qtpylib.crossed_below(dataframe["close"], dataframe["sma250"])
-                    )  # Price crosses below sma250
-                )
-                & (dataframe["volume"] > 0)  # Ensure there is volume
-            ),
-            "exit_long",
-        ] = 1
+        # --- 三位一体离场策略 ---
+        exit_conditions = []
+
+        # 1. 进攻组 (趋势高潮离场): ADX > 50
+        # exit_conditions.append(
+        #     (qtpylib.crossed_above(dataframe['adx'], 50)) &
+        #     (dataframe['volume'] > 0)
+        # )
+
+        # 2. 中场组 (趋势衰竭离场): RSI 从超买区回落
+        # exit_conditions.append(
+        #     (qtpylib.crossed_above(dataframe['rsi'], 70)) &
+        #     (dataframe['volume'] > 0)
+        # )
+
+        # 3. 后卫组 (价格破位离场): 价格跌破最终生命线
+        exit_conditions.append(
+            (qtpylib.crossed_below(dataframe["close"], dataframe["sma250"]))
+            & (dataframe["volume"] > 0)
+        )
+
+        # 4. 市场状态过滤器 (最高优先级): 趋势结束,进入震荡
+        exit_conditions.append(
+            (qtpylib.crossed_below(dataframe["adx"], 25)) & (dataframe["volume"] > 0)
+        )
+
+        # 合并所有离场条件
+        if exit_conditions:
+            dataframe.loc[pd.concat(exit_conditions, axis=1).any(axis=1), "exit_long"] = 1
 
         return dataframe
