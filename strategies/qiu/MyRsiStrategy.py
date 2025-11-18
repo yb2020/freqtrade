@@ -234,7 +234,8 @@ class MyRsiStrategy(IStrategy):
             & (dataframe["volume"] > 0)
         )
         dataframe.loc[conditions, "enter_long"] = 1
-        dataframe.loc[conditions, "custom_stoploss"] = dataframe["price_low_5"] * 0.998
+        # 将止损价格存储在专用列中供 custom_stoploss 使用
+        dataframe.loc[conditions, "stop_price"] = dataframe["price_low_5"] * 0.998
 
         return dataframe
 
@@ -255,3 +256,33 @@ class MyRsiStrategy(IStrategy):
             "exit_long",
         ] = 1
         return dataframe
+
+    def custom_stoploss(
+        self,
+        pair: str,
+        trade: Trade,
+        current_time: datetime,
+        current_rate: float,
+        current_profit: float,
+        after_fill: bool,
+        **kwargs,
+    ) -> float | None:
+        """
+        动态止损: 基于入场时的 price_low_5
+        止损位 = price_low_5 * 0.998
+        """
+        # 从 dataframe 中获取止损价格
+        dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+
+        # 找到入场时的止损价格
+        if len(dataframe) > 0:
+            # 使用入场时间找到对应的 K 线
+            entry_candle = dataframe[dataframe["date"] <= trade.open_date_utc].iloc[-1]
+            if "stop_price" in entry_candle and not pd.isna(entry_candle["stop_price"]):
+                stop_price = entry_candle["stop_price"]
+                # 计算相对于当前价格的止损百分比
+                stop_loss_pct = (stop_price - current_rate) / current_rate
+                return stop_loss_pct
+
+        # 如果无法获取,使用默认止损
+        return None
