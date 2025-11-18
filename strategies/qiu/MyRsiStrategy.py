@@ -250,17 +250,17 @@ class MyRsiStrategy(IStrategy):
             & (dataframe["volume"] > dataframe["volume"].rolling(20).mean() * 1.2)  # 成交量放大 20%
         )
 
-        # 判断是哪条路径触发的信号
-        is_strong_divergence = (
-            (dataframe["rsi"] < 30)
-            & (dataframe["low"] < dataframe["price_low_5"])
-            & (dataframe["rsi"] > dataframe["rsi_low_5"] + 5)
-            & (dataframe["rsi"] > dataframe["rsi"].shift(1) + 2)
+        # 判断是哪条路径触发的信号[用于价格确认选择]
+        is_strong_div_shifted = (
+            (dataframe["rsi"].shift(1) < 30)
+            & (dataframe["low"].shift(1) < dataframe["price_low_5"].shift(1))
+            & (dataframe["rsi"].shift(1) > dataframe["rsi_low_5"].shift(1) + 5)
+            & (dataframe["rsi"].shift(1) > dataframe["rsi"].shift(2) + 2)
         )
 
         # 根据路径选择确认条件
         price_confirmation = np.where(
-            is_strong_divergence.shift(1),
+            is_strong_div_shifted,
             basic_price_confirmation,  # 强背离用基础确认
             strong_price_confirmation,  # 弱背离用强确认
         )
@@ -271,7 +271,17 @@ class MyRsiStrategy(IStrategy):
             & price_confirmation  # 条件2: 出现完整的价格行为确认信号
             & (dataframe["volume"] > 0)
         )
-        dataframe.loc[conditions, "enter_long"] = 1
+
+        # 5. 开仓,同时标记其他量化分析标记
+        # 区分强背离和弱背离的入场信号
+        strong_entry = conditions & is_strong_div_shifted
+        weak_entry = conditions & ~is_strong_div_shifted
+
+        dataframe.loc[strong_entry, "enter_long"] = 1
+        dataframe.loc[strong_entry, "enter_tag"] = "buy_strong"
+        dataframe.loc[weak_entry, "enter_long"] = 1
+        dataframe.loc[weak_entry, "enter_tag"] = "buy_weak"
+
         # 将止损价格存储在专用列中供 custom_stoploss 使用
         dataframe.loc[conditions, "stop_price"] = dataframe["price_low_5"] * 0.998
 
