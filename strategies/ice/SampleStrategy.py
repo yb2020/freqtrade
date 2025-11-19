@@ -66,14 +66,14 @@ class SampleStrategy(IStrategy):
     # This attribute will be overridden if the config file contains "minimal_roi".
     minimal_roi = {
         # "120": 0.0,  # exit after 120 minutes at break even
-        "60": 0.01,
-        "30": 0.02,
-        "0": 0.04,
+        "60": 0.02,
+        "30": 0.04,
+        "0": 0.06,
     }
 
     # Optimal stoploss designed for the strategy.
     # This attribute will be overridden if the config file contains "stoploss".
-    stoploss = -0.10
+    stoploss = -0.50
 
     # Trailing stoploss
     trailing_stop = False
@@ -82,7 +82,7 @@ class SampleStrategy(IStrategy):
     # trailing_stop_positive_offset = 0.0  # Disabled / not configured
 
     # Optimal timeframe for the strategy.
-    timeframe = "1m"
+    timeframe = "5m"
 
     # Run "populate_indicators()" only for new candle.
     process_only_new_candles = True
@@ -130,6 +130,9 @@ class SampleStrategy(IStrategy):
             },
             "RSI": {
                 'rsi': {'color': 'red'},
+            },
+            "ATR": {
+                'atr': {'color': 'blue'},
             },
         },
     }
@@ -303,6 +306,9 @@ class SampleStrategy(IStrategy):
         dataframe["htsine"] = hilbert["sine"]
         dataframe["htleadsine"] = hilbert["leadsine"]
 
+        # ATR
+        dataframe['atr'] = ta.ATR(dataframe, timeperiod=14)
+
         # Pattern Recognition - Bullish candlestick patterns
         # ------------------------------------
         # # Hammer: values [0, 100]
@@ -391,8 +397,10 @@ class SampleStrategy(IStrategy):
                 # Check for recent K-line downtrend
                 (dataframe['close'] < dataframe['close'].shift(5)) &
                 # 3. Bollinger Band: Price touches the lower band
-                (dataframe['low'] <= dataframe['bb_lowerband'])
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
+                (dataframe['low'] <= dataframe['bb_lowerband']) &
+                # 4. ATR volatility filter: Only enter when market is not too volatile
+                (dataframe['atr'] < (dataframe['atr'].rolling(24).mean() * 1.5)) &
+                (dataframe["volume"] > 0)  # Make sure Volume is not 0
             ),
             "enter_long",
         ] = 1
@@ -422,7 +430,7 @@ class SampleStrategy(IStrategy):
                 # 1. RSI is above sell_rsi (take profit zone)
                 (dataframe['rsi'] > self.sell_rsi.value) &
                 # 2. Price is above Bollinger Band upper band
-                (dataframe['close'] > dataframe['bb_upperband']) &
+                # (dataframe['close'] > dataframe['bb_upperband']) &
                 (dataframe["volume"] > 0)  # Make sure Volume is not 0
             ),
             "exit_long",

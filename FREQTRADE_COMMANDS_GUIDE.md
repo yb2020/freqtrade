@@ -34,6 +34,7 @@ conda run -n freqtrade freqtrade trade -c config_sample.json
 
 # 方法2: 使用 pkill 强制停止
 pkill -f "freqtrade trade"
+pkill -f "freqtrade webserver"
 ```
 
 ## 3. 数据与策略
@@ -70,12 +71,14 @@ conda run -n freqtrade freqtrade backtesting \
 ### 查看回测结果 (图表UI)
 此命令会启动一个本地服务，让你在浏览器中交互式地查看回测图表。
 ```bash
-conda run -n freqtrade freqtrade webserver --config config_sample.json
+conda run -n freqtrade \
+freqtrade webserver --config config_sample.json
 ```
 
 ### 查看回测结果 (文本)
 ```bash
-conda run -n freqtrade freqtrade backtesting-show
+conda run -n freqtrade \   
+freqtrade backtesting-show
 ```
 
 ## 5. 参数优化 (Hyperopt)
