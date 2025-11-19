@@ -117,7 +117,7 @@ class MyRsiStrategy(IStrategy):
             # Main plot indicators (Moving averages, ...)
             "main_plot": {
                 "tema": {},
-                "sar": {"color": "white"},
+                "sma250": {"color": "white"},
             },
             "subplots": {
                 # Subplots - each dict defines one additional plot
@@ -177,6 +177,9 @@ class MyRsiStrategy(IStrategy):
         # dataframe["macd"] = macd["macd"]
         # dataframe["macdsignal"] = macd["macdsignal"]
         # dataframe["macdhist"] = macd["macdhist"]
+
+        # ADX
+        dataframe["sma250"] = ta.SMA(dataframe, timeperiod=250)
 
         # Retrieve best bid and best ask from the orderbook
         # ------------------------------------
